@@ -19,6 +19,8 @@ import { Layer } from "konva/lib/Layer";
 import randomColor from "randomcolor";
 import { MutableRefObject } from "react";
 import { AnnotationShape, Stage } from "react-mindee-js";
+import src from "react-select";
+import src from "react-select";
 import {
   DET_MEAN,
   DET_STD,
@@ -117,6 +119,12 @@ export const extractWords = async ({
   stage: Stage;
   size: [number, number];
 }) => {
+  console.log("extracting words", {
+    recognitionModel,
+    stage,
+    size,
+  });
+
   const crops = (await getCrops({ stage })) as Array<{
     id: string;
     crop: HTMLImageElement;
@@ -193,12 +201,18 @@ export const extractWordsFromCrop = async ({
   size,
 }: {
   recognitionModel: GraphModel | null;
-  crops: any;
+  crops: HTMLImageElement[];
   size: [number, number];
 }) => {
   if (!recognitionModel) {
     return;
   }
+
+  for (const crop of crops) {
+    console.log("crop", crop);
+    document.body.appendChild(crop);
+  }
+
   let tensor = getImageTensorForRecognitionModel(crops, size);
   let predictions = await recognitionModel.executeAsync(tensor);
 
@@ -226,35 +240,38 @@ export const extractWordsFromCrop = async ({
   return words;
 };
 
+export interface HeatMap {
+  pixelData: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
 export const getHeatMapFromImage = async ({
-  heatmapContainer,
   detectionModel,
   imageObject,
   size,
 }: {
   detectionModel: GraphModel | null;
-  heatmapContainer: HTMLCanvasElement | null;
   imageObject: HTMLImageElement;
   size: [number, number];
-}) =>
-  new Promise(async (resolve) => {
-    if (!heatmapContainer && !detectionModel) {
-      return;
-    }
+}): Promise<HeatMap | undefined> => {
+  if (!detectionModel) {
+    return;
+  }
+  const { width, height } = imageObject;
+  let tensor = getImageTensorForDetectionModel(imageObject, size);
+  let prediction0 =await  detectionModel?.execute(tensor);
+  // @ts-ignore
+  let prediction = squeeze(prediction0, 0);
+  if (Array.isArray(prediction)) {
+    prediction = prediction[0];
+  }
+  console.log("prediction",prediction)
+  // @ts-ignore
+  const pixelData = await browser.toPixels(prediction);
+  return { pixelData, width:512, height:512 };
+};
 
-    heatmapContainer!.width = imageObject.width;
-    heatmapContainer!.height = imageObject.height;
-    let tensor = getImageTensorForDetectionModel(imageObject, size);
-    let prediction: any = await detectionModel?.execute(tensor);
-    // @ts-ignore
-    prediction = squeeze(prediction, 0);
-    if (Array.isArray(prediction)) {
-      prediction = prediction[0];
-    }
-    // @ts-ignore
-    await browser.toPixels(prediction, heatmapContainer);
-    resolve("test");
-  });
 function clamp(number: number, size: number) {
   return Math.max(0, Math.min(number, size));
 }
@@ -285,8 +302,18 @@ export const transformBoundingBox = (
   };
 };
 
-export const extractBoundingBoxesFromHeatmap = (size: [number, number]) => {
-  let src = cv.imread("heatmap");
+export const extractBoundingBoxesFromHeatmap = (
+  heatMap: HeatMap,
+  size: [number, number]
+) => {
+  debugger;
+  const imageData = new ImageData(
+    new Uint8ClampedArray(heatMap.pixelData),
+    heatMap.width,
+    heatMap.height
+  );
+  let src = cv.matFromImageData(imageData);
+
   cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
   cv.threshold(src, src, 77, 255, cv.THRESH_BINARY);
   cv.morphologyEx(src, src, cv.MORPH_OPEN, cv.Mat.ones(2, 2, cv.CV_8U));

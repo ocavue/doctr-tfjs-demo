@@ -21,12 +21,12 @@ import {
   getHeatMapFromImage,
   loadDetectionModel,
   loadRecognitionModel,
+  type HeatMap,
 } from "src/utils";
 import { useStateWithRef } from "src/utils/hooks";
 import { flatten } from "underscore";
 import { UploadedFile, Word } from "../common/types";
 import AnnotationViewer from "./AnnotationViewer";
-import HeatMap from "./HeatMap";
 import ImageViewer from "./ImageViewer";
 import Sidebar from "./Sidebar";
 import WordsList from "./WordsList";
@@ -45,7 +45,6 @@ export default function VisionWrapper(): JSX.Element {
   const recognitionModel = useRef<GraphModel | null>(null);
   const detectionModel = useRef<GraphModel | null>(null);
   const imageObject = useRef<HTMLImageElement>(new Image());
-  const heatMapContainerObject = useRef<HTMLCanvasElement | null>(null);
   const annotationStage = useRef<Stage | null>();
   const [extractingWords, setExtractingWords] = useState(false);
   const [annotationData, setAnnotationData] = useState<AnnotationData>({
@@ -68,15 +67,6 @@ export default function VisionWrapper(): JSX.Element {
     setWords([]);
     setAnnotationData({ image: null });
     imageObject.current.src = "";
-    if (heatMapContainerObject.current) {
-      const context = heatMapContainerObject.current.getContext("2d");
-      context?.clearRect(
-        0,
-        0,
-        heatMapContainerObject.current.width,
-        heatMapContainerObject.current.height
-      );
-    }
     loadRecognitionModel({ recognitionModel, recoConfig });
   }, [recoConfig]);
 
@@ -84,20 +74,15 @@ export default function VisionWrapper(): JSX.Element {
     setWords([]);
     setAnnotationData({ image: null });
     imageObject.current.src = "";
-    if (heatMapContainerObject.current) {
-      const context = heatMapContainerObject.current.getContext("2d");
-      context?.clearRect(
-        0,
-        0,
-        heatMapContainerObject.current.width,
-        heatMapContainerObject.current.height
-      );
-    }
     loadDetectionModel({ detectionModel, detConfig });
   }, [detConfig]);
 
-  const getBoundingBoxes = () => {
-    const boundingBoxes = extractBoundingBoxesFromHeatmap([
+  const getBoundingBoxes = (heatMap: HeatMap | undefined) => {
+    if (!heatMap) {
+      return;
+    }
+
+    const boundingBoxes = extractBoundingBoxesFromHeatmap(heatMap, [
       detConfig.height,
       detConfig.width,
     ]);
@@ -122,13 +107,12 @@ export default function VisionWrapper(): JSX.Element {
     setLoadingImage(true);
     setExtractingWords(true);
     imageObject.current.onload = async () => {
-      await getHeatMapFromImage({
-        heatmapContainer: heatMapContainerObject.current,
+      const heatMap = await getHeatMapFromImage({
         detectionModel: detectionModel.current,
         imageObject: imageObject.current,
         size: [detConfig.height, detConfig.width],
       });
-      getBoundingBoxes();
+      getBoundingBoxes(heatMap);
       setLoadingImage(false);
     };
     imageObject.current.src = uploadedFile?.image as string;
@@ -193,7 +177,6 @@ export default function VisionWrapper(): JSX.Element {
       <Portal container={uploadContainer}>
         <ImageViewer loadingImage={loadingImage} onUpload={onUpload} />
       </Portal>
-      <HeatMap heatMapContainerRef={heatMapContainerObject} />
       <Grid item xs={12} md={3}>
         <Sidebar
           detConfig={detConfig}
