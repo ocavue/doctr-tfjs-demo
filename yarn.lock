@@ -2228,11 +2228,6 @@
   resolved "https://registry.yarnpkg.com/@techstark/opencv-js/-/opencv-js-4.10.0-release.1.tgz#5344c715c404c22419ac893c6a2d86727e2416fc"
   integrity sha512-S4XELidRiQeA0q1s9VQLo540wCxUo24r1O4C+LqZ6llX+sPCXvZCPv3Ice8dEIr0uavyZ8YZeKXSBdDgMXSXjw==
 
-"@tensorflow-models/coco-ssd@^2.2.2":
-  version "2.2.2"
-  resolved "https://registry.yarnpkg.com/@tensorflow-models/coco-ssd/-/coco-ssd-2.2.2.tgz#2a308b3b11a106bf640c5245b980c79df8208b60"
-  integrity sha512-Jey2JscmKEValcFZH2ZLz14s8KPRmVtfJ0d0M3dPhvBp9dJiGNanVXr/pJAY5OS7emKj9uSciGhdkHWXY9Hovw==
-
 "@tensorflow/tfjs-backend-cpu@3.9.0":
   version "3.9.0"
   resolved "https://registry.yarnpkg.com/@tensorflow/tfjs-backend-cpu/-/tfjs-backend-cpu-3.9.0.tgz#27ee581a4765039eb0e84d9d473b6d5f2769c813"
