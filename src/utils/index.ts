@@ -10,9 +10,11 @@ import {
   concat,
   GraphModel,
   loadGraphModel,
+  Rank,
   scalar,
   softmax,
   squeeze,
+  Tensor,
   unstack,
 } from "@tensorflow/tfjs";
 import { Layer } from "konva/lib/Layer";
@@ -260,15 +262,13 @@ export const getHeatMapFromImage = async ({
   }
   const { width, height } = imageObject;
   let tensor = getImageTensorForDetectionModel(imageObject, size);
-  let prediction0 =await  detectionModel?.execute(tensor);
-  // @ts-ignore
-  let prediction = squeeze(prediction0, 0);
-  if (Array.isArray(prediction)) {
-    prediction = prediction[0];
-  }
-  console.log("prediction",prediction)
-  // @ts-ignore
-  const pixelData = await browser.toPixels(prediction);
+  let prediction1 = detectionModel.execute(tensor);
+  let prediction2 = Array.isArray(prediction1) ? prediction1[0] : prediction1;
+  let prediction3 = squeeze(prediction2, 0);
+
+  console.log("prediction3", prediction3);
+
+  const pixelData = await browser.toPixels(prediction3 as Tensor<Rank.R3>);
   return { pixelData, width:512, height:512 };
 };
 
@@ -306,7 +306,7 @@ export const extractBoundingBoxesFromHeatmap = (
   heatMap: HeatMap,
   size: [number, number]
 ) => {
-  debugger;
+  // debugger;
   const imageData = new ImageData(
     new Uint8ClampedArray(heatMap.pixelData),
     heatMap.width,
