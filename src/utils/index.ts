@@ -10,6 +10,7 @@ import {
   concat,
   GraphModel,
   loadGraphModel,
+  PixelData,
   Rank,
   scalar,
   softmax,
@@ -20,7 +21,7 @@ import {
 import { Layer } from "konva/lib/Layer";
 import randomColor from "randomcolor";
 import { MutableRefObject } from "react";
-import { AnnotationShape, Stage } from "react-mindee-js";
+import { Stage } from "react-mindee-js";
 import {
   DET_MEAN,
   DET_STD,
@@ -60,7 +61,7 @@ export const loadDetectionModel = async ({
 };
 
 export const getImageTensorForRecognitionModel = (
-  crops: HTMLImageElement[],
+  crops: Array<ImageData>,
   size: [number, number]
 ) => {
   const list = crops.map((imageObject) => {
@@ -98,11 +99,11 @@ export const getImageTensorForRecognitionModel = (
 };
 
 export const getImageTensorForDetectionModel = (
-  imageObject: HTMLImageElement,
+  imageData: ImageData,
   size: [number, number]
-) => {
+): Tensor<Rank> => {
   let tensor = browser
-    .fromPixels(imageObject)
+    .fromPixels(imageData)
     .resizeNearestNeighbor(size)
     .toFloat();
   let mean = scalar(255 * DET_MEAN);
@@ -112,32 +113,37 @@ export const getImageTensorForDetectionModel = (
 
 export const extractWords = async ({
   recognitionModel,
-  stage,
+  crops,
   size,
 }: {
   recognitionModel: GraphModel | null;
-  stage: Stage;
+  crops: ImageData[];
   size: [number, number];
 }) => {
   console.log("extracting words", {
     recognitionModel,
-    stage,
+    crops,
     size,
   });
 
-  const crops = (await getCrops({ stage })) as Array<{
-    id: string;
-    crop: HTMLImageElement;
-    color: string;
-  }>;
-  const chunks = chunk(crops, 32);
+  // 将 ImageData 转换为 PixelData
+  // const pixelDataList = crops.map((crop): PixelData => {
+  //   return {
+  //     width: crop.width,
+  //     height: crop.height,
+  //     data: crop.data,
+  //   };
+  // });
+let   pixelDataList = crops
+
+  const chunks = chunk(pixelDataList, 32);
   return Promise.all(
     chunks.map(
       (chunk) =>
         new Promise(async (resolve) => {
           const words = await extractWordsFromCrop({
             recognitionModel,
-            crops: chunk.map((elem) => elem.crop),
+            crops: chunk,
             size,
           });
           const collection = words?.map((word, index) => ({
@@ -171,28 +177,40 @@ export const dataURItoBlob = (dataURI: string) => {
   return new Blob([ia], { type: mimeString });
 };
 
-export const getCrops = ({ stage }: { stage: Stage }) => {
-  const layer = stage.findOne<Layer>("#shapes-layer");
-  const polygons = layer.find(".shape");
-  return Promise.all(
-    polygons.map((polygon) => {
-      const clientRect = polygon.getClientRect();
-      return new Promise((resolve) => {
-        stage.toImage({
-          ...clientRect,
-          quality: 5,
-          pixelRatio: 10,
-          callback: (value: HTMLImageElement) => {
-            resolve({
-              id: polygon.id(),
-              crop: value,
-              color: polygon.getAttr("stroke"),
-            });
-          },
-        });
-      });
-    })
-  );
+export const getCrops = (
+  imageData: ImageData,
+  polygons: AnnotationShape[],
+  size: [number, number]
+): ImageData[] => {
+  const canvas = new OffscreenCanvas(size[1], size[0]);
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) {
+    throw new Error("Cannot get 2D context from OffscreenCanvas");
+  }
+
+  // 将原始图像数据绘制到 OffscreenCanvas
+  ctx.putImageData(imageData, 0, 0);
+
+  const crops: ImageData[] = polygons.map((polygon) => {
+    const [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] = polygon.coordinates;
+
+    // 计算裁剪区域的边界矩形
+    const minX = Math.min(x1, x2, x3, x4) * size[1];
+    const minY = Math.min(y1, y2, y3, y4) * size[0];
+    const maxX = Math.max(x1, x2, x3, x4) * size[1];
+    const maxY = Math.max(y1, y2, y3, y4) * size[0];
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    // 获取裁剪区域的 ImageData
+    const cropImageData = ctx.getImageData(minX, minY, width, height);
+
+    return cropImageData;
+  });
+
+  return crops;
 };
 
 export const extractWordsFromCrop = async ({
@@ -201,17 +219,17 @@ export const extractWordsFromCrop = async ({
   size,
 }: {
   recognitionModel: GraphModel | null;
-  crops: HTMLImageElement[];
+  crops: Array<ImageData>;
   size: [number, number];
 }) => {
   if (!recognitionModel) {
     return;
   }
 
-  for (const crop of crops) {
-    console.log("crop", crop);
-    document.body.appendChild(crop);
-  }
+  // for (const crop of crops) {
+  //   console.log("crop", crop);
+  //   document.body.appendChild(crop);
+  // }
 
   let tensor = getImageTensorForRecognitionModel(crops, size);
   let predictions = await recognitionModel.executeAsync(tensor);
@@ -248,17 +266,17 @@ export interface HeatMap {
 
 export const getHeatMapFromImage = async ({
   detectionModel,
-  imageObject,
+  imageData,
   size,
 }: {
   detectionModel: GraphModel | null;
-  imageObject: HTMLImageElement;
+  imageData: ImageData;
   size: [number, number];
 }): Promise<HeatMap | undefined> => {
   if (!detectionModel) {
     return;
   }
-  let tensor = getImageTensorForDetectionModel(imageObject, size);
+  let tensor = getImageTensorForDetectionModel(imageData, size);
   let result = detectionModel.execute(tensor);
   let squeezed = squeeze<Tensor<Rank.R3>>(
     Array.isArray(result) ? result[0] : result
@@ -271,28 +289,33 @@ function clamp(number: number, size: number) {
   return Math.max(0, Math.min(number, size));
 }
 
+export interface AnnotationShape {
+  id: number;
+  coordinates: number[][];
+}
+
 export const transformBoundingBox = (
-  contour: any,
+  contour: cv.Rect,
   id: number,
   size: [number, number]
 ): AnnotationShape => {
   let offset =
     (contour.width * contour.height * 1.8) /
     (2 * (contour.width + contour.height));
-  const p1 = clamp(contour.x - offset, size[1]) - 1;
-  const p2 = clamp(p1 + contour.width + 2 * offset, size[1]) - 1;
-  const p3 = clamp(contour.y - offset, size[0]) - 1;
-  const p4 = clamp(p3 + contour.height + 2 * offset, size[0]) - 1;
+  const x1 = clamp(contour.x - offset, size[1]) - 1;
+  const x2 = clamp(x1 + contour.width + 2 * offset, size[1]) - 1;
+  const y1 = clamp(contour.y - offset, size[0]) - 1;
+  const y2 = clamp(y1 + contour.height + 2 * offset, size[0]) - 1;
   return {
     id,
-    config: {
-      stroke: randomColor(),
-    },
+    // config: {
+    //   stroke: randomColor(),
+    // },
     coordinates: [
-      [p1 / size[1], p3 / size[0]],
-      [p2 / size[1], p3 / size[0]],
-      [p2 / size[1], p4 / size[0]],
-      [p1 / size[1], p4 / size[0]],
+      [x1 / size[1], y1 / size[0]],
+      [x2 / size[1], y1 / size[0]],
+      [x2 / size[1], y2 / size[0]],
+      [x1 / size[1], y2 / size[0]],
     ],
   };
 };
@@ -300,7 +323,7 @@ export const transformBoundingBox = (
 export const extractBoundingBoxesFromHeatmap = (
   heatMap: HeatMap,
   size: [number, number]
-) => {
+): AnnotationShape[] => {
   // debugger;
   const imageData = new ImageData(
     new Uint8ClampedArray(heatMap.pixelData),
@@ -323,8 +346,7 @@ export const extractBoundingBoxesFromHeatmap = (
     cv.CHAIN_APPROX_SIMPLE
   );
   // draw contours with random Scalar
-  const boundingBoxes = [];
-  // @ts-ignore
+  const boundingBoxes: AnnotationShape[] = [];
   for (let i = 0; i < contours.size(); ++i) {
     const contourBoundingBox = cv.boundingRect(contours.get(i));
     if (contourBoundingBox.width > 2 && contourBoundingBox.height > 2) {
@@ -335,4 +357,21 @@ export const extractBoundingBoxesFromHeatmap = (
   contours.delete();
   hierarchy.delete();
   return boundingBoxes;
+};
+
+// 新增函数，用于将图像转换为 ImageData
+export const getImageData = (image: HTMLImageElement): Promise<ImageData> => {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject("Cannot get 2D context");
+      return;
+    }
+    ctx.drawImage(image, 0, 0);
+    const imageData = ctx.getImageData(0, 0, image.width, image.height);
+    resolve(imageData);
+  });
 };

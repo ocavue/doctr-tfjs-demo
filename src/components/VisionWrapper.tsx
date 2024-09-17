@@ -18,7 +18,9 @@ import { DET_CONFIG, RECO_CONFIG } from "src/common/constants";
 import {
   extractBoundingBoxesFromHeatmap,
   extractWords,
+  getCrops,
   getHeatMapFromImage,
+  getImageData,
   loadDetectionModel,
   loadRecognitionModel,
   type HeatMap,
@@ -86,17 +88,17 @@ export default function VisionWrapper(): JSX.Element {
       detConfig.height,
       detConfig.width,
     ]);
-    setAnnotationData({
-      image: imageObject.current.src,
-      shapes: boundingBoxes,
-    });
-    setTimeout(getWords, 1000);
+    // setAnnotationData({
+    //   image: imageObject.current.src,
+    //   shapes: boundingBoxes,
+    // });
+    // getWords(boundingBoxes);
   };
 
-  const getWords = async () => {
+  const getWords = async (crops: ImageData[]) => {
     const words = (await extractWords({
       recognitionModel: recognitionModel.current,
-      stage: annotationStage.current!,
+      crops,
       size: [recoConfig.height, recoConfig.width],
     })) as Word[];
     setWords(flatten(words));
@@ -106,15 +108,44 @@ export default function VisionWrapper(): JSX.Element {
   const loadImage = async (uploadedFile: UploadedFile) => {
     setLoadingImage(true);
     setExtractingWords(true);
-    imageObject.current.onload = async () => {
+    const image = imageObject.current;
+
+    if (!image) {
+      return;
+    }
+
+    image.onload = async () => {
+      const imageData = await getImageData(image);
       const heatMap = await getHeatMapFromImage({
         detectionModel: detectionModel.current,
-        imageObject: imageObject.current,
+        imageData: imageData,
         size: [detConfig.height, detConfig.width],
       });
-      getBoundingBoxes(heatMap);
+
+      if (!heatMap) {
+        console.warn("heatMap is empty");
+        return;
+      }
+
+      const boundingBoxes = extractBoundingBoxesFromHeatmap(heatMap, [
+        detConfig.height,
+        detConfig.width,
+      ]);
+      const crops = getCrops(imageData, boundingBoxes, [
+        imageData.height,
+        imageData.width,
+      ]);
+      
+
+      // setAnnotationData({
+      //   image: imageObject.current.src,
+      //   shapes: boundingBoxes,
+      // });
+      getWords(crops);
+
       setLoadingImage(false);
     };
+
     imageObject.current.src = uploadedFile?.image as string;
   };
   const setAnnotationStage = (stage: Stage) => {
