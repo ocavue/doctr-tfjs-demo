@@ -23,14 +23,17 @@ import randomColor from "randomcolor";
 import { MutableRefObject } from "react";
 import { Stage } from "react-mindee-js";
 import {
+  DET_CONFIG,
+  DET_CONFIG,
   DET_MEAN,
   DET_STD,
   REC_MEAN,
   REC_STD,
+  RECO_CONFIG,
   VOCAB,
 } from "src/common/constants";
-import { ModelConfig } from "src/common/types";
-import { chunk } from "underscore";
+import { ModelConfig, Word } from "src/common/types";
+import { chunk, flatten } from "underscore";
 
 export const loadRecognitionModel = async ({
   recognitionModel,
@@ -119,7 +122,7 @@ export const extractWords = async ({
   recognitionModel: GraphModel | null;
   crops: ImageData[];
   size: [number, number];
-}) => {
+}): Promise<string[]> => {
   console.log("extracting words", {
     recognitionModel,
     crops,
@@ -134,26 +137,15 @@ export const extractWords = async ({
   //     data: crop.data,
   //   };
   // });
-let   pixelDataList = crops
+  let pixelDataList = crops;
 
   const chunks = chunk(pixelDataList, 32);
-  return Promise.all(
-    chunks.map(
-      (chunk) =>
-        new Promise(async (resolve) => {
-          const words = await extractWordsFromCrop({
-            recognitionModel,
-            crops: chunk,
-            size,
-          });
-          const collection = words?.map((word, index) => ({
-            ...chunk[index],
-            words: word ? [word] : [],
-          }));
-          resolve(collection);
-        })
+  const words = await Promise.all(
+    chunks.map((chunk) =>
+      extractWordsFromCrop({ recognitionModel, crops: chunk, size })
     )
   );
+  return words.flat();
 };
 
 export const dataURItoBlob = (dataURI: string) => {
@@ -221,9 +213,9 @@ export const extractWordsFromCrop = async ({
   recognitionModel: GraphModel | null;
   crops: Array<ImageData>;
   size: [number, number];
-}) => {
+}): Promise<string[]> => {
   if (!recognitionModel) {
-    return;
+    return [];
   }
 
   // for (const crop of crops) {
@@ -359,19 +351,87 @@ export const extractBoundingBoxesFromHeatmap = (
   return boundingBoxes;
 };
 
-// 新增函数，用于将图像转换为 ImageData
-export const getImageData = (image: HTMLImageElement): Promise<ImageData> => {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject("Cannot get 2D context");
-      return;
-    }
-    ctx.drawImage(image, 0, 0);
-    const imageData = ctx.getImageData(0, 0, image.width, image.height);
-    resolve(imageData);
+const getImageDataFromLoadedImage = (image: HTMLImageElement): ImageData => {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Cannot get 2D context");
+  }
+  ctx.drawImage(image, 0, 0);
+  return ctx.getImageData(0, 0, image.width, image.height);
+};
+
+export const getImageData = async (
+  image: HTMLImageElement
+): Promise<ImageData> => {
+  if (image.complete) {
+    return getImageDataFromLoadedImage(image);
+  }
+
+  return await new Promise((resolve) => {
+    image.addEventListener("load", () => {
+      resolve(getImageDataFromLoadedImage(image));
+    });
   });
 };
+
+const detConfig = DET_CONFIG.db_mobilenet_v2;
+const recoConfig = RECO_CONFIG.crnn_vgg16_bn;
+
+export const extractTextFromImage = async (
+  image: HTMLImageElement
+): Promise<string> => {
+  console.log("extractTextFromImage 1");
+  const imageData = await getImageData(image);
+  console.log("extractTextFromImage 2");
+
+  const detectionModel = await loadDetectionModel_V2();
+
+  const heatMap = await getHeatMapFromImage({
+    detectionModel: detectionModel,
+    imageData: imageData,
+    size: [detConfig.height, detConfig.width],
+  });
+
+  if (!heatMap) {
+    return "";
+  }
+
+  const boundingBoxes = extractBoundingBoxesFromHeatmap(heatMap, [
+    detConfig.height,
+    detConfig.width,
+  ]);
+  const crops = getCrops(imageData, boundingBoxes, [
+    imageData.height,
+    imageData.width,
+  ]);
+
+  const recognitionModel = await loadRecognitionModel_V2();
+
+  const words = await extractWords({
+    recognitionModel,
+    crops,
+    size: [recoConfig.height, recoConfig.width],
+  });
+  return words.filter(Boolean).join(" ");
+};
+
+const loadDetectionModel_V2 = cache(async () => {
+  return await loadGraphModel(detConfig.path);
+});
+
+const loadRecognitionModel_V2 = cache(async () => {
+  return await loadGraphModel(recoConfig.path);
+});
+
+function cache<T>(func: () => T): () => T {
+  let result: T | undefined;
+  return (): T => {
+    if (!result) {
+      result = func();
+    }
+    return result;
+  };
+}

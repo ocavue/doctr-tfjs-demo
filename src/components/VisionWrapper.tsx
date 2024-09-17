@@ -17,6 +17,7 @@ import {
 import { DET_CONFIG, RECO_CONFIG } from "src/common/constants";
 import {
   extractBoundingBoxesFromHeatmap,
+  extractTextFromImage,
   extractWords,
   getCrops,
   getHeatMapFromImage,
@@ -115,35 +116,39 @@ export default function VisionWrapper(): JSX.Element {
     }
 
     image.onload = async () => {
-      const imageData = await getImageData(image);
-      const heatMap = await getHeatMapFromImage({
-        detectionModel: detectionModel.current,
-        imageData: imageData,
-        size: [detConfig.height, detConfig.width],
-      });
+      const text = await extractTextFromImage(image);
+      console.log(text);
 
-      if (!heatMap) {
-        console.warn("heatMap is empty");
-        return;
-      }
 
-      const boundingBoxes = extractBoundingBoxesFromHeatmap(heatMap, [
-        detConfig.height,
-        detConfig.width,
-      ]);
-      const crops = getCrops(imageData, boundingBoxes, [
-        imageData.height,
-        imageData.width,
-      ]);
+      // const imageData = await getImageData(image);
+      // const heatMap = await getHeatMapFromImage({
+      //   detectionModel: detectionModel.current,
+      //   imageData: imageData,
+      //   size: [detConfig.height, detConfig.width],
+      // });
+
+      // if (!heatMap) {
+      //   console.warn("heatMap is empty");
+      //   return;
+      // }
+
+      // const boundingBoxes = extractBoundingBoxesFromHeatmap(heatMap, [
+      //   detConfig.height,
+      //   detConfig.width,
+      // ]);
+      // const crops = getCrops(imageData, boundingBoxes, [
+      //   imageData.height,
+      //   imageData.width,
+      // ]);
       
 
-      // setAnnotationData({
-      //   image: imageObject.current.src,
-      //   shapes: boundingBoxes,
-      // });
-      getWords(crops);
+      // // setAnnotationData({
+      // //   image: imageObject.current.src,
+      // //   shapes: boundingBoxes,
+      // // });
+      // getWords(crops);
 
-      setLoadingImage(false);
+      // setLoadingImage(false);
     };
 
     imageObject.current.src = uploadedFile?.image as string;
