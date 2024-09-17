@@ -21,8 +21,6 @@ import { Layer } from "konva/lib/Layer";
 import randomColor from "randomcolor";
 import { MutableRefObject } from "react";
 import { AnnotationShape, Stage } from "react-mindee-js";
-import src from "react-select";
-import src from "react-select";
 import {
   DET_MEAN,
   DET_STD,
@@ -260,16 +258,13 @@ export const getHeatMapFromImage = async ({
   if (!detectionModel) {
     return;
   }
-  const { width, height } = imageObject;
   let tensor = getImageTensorForDetectionModel(imageObject, size);
-  let prediction1 = detectionModel.execute(tensor);
-  let prediction2 = Array.isArray(prediction1) ? prediction1[0] : prediction1;
-  let prediction3 = squeeze(prediction2, 0);
-
-  console.log("prediction3", prediction3);
-
-  const pixelData = await browser.toPixels(prediction3 as Tensor<Rank.R3>);
-  return { pixelData, width:512, height:512 };
+  let result = detectionModel.execute(tensor);
+  let squeezed = squeeze<Tensor<Rank.R3>>(
+    Array.isArray(result) ? result[0] : result
+  );
+  const pixelData = await browser.toPixels(squeezed);
+  return { pixelData, width: squeezed.shape[0], height: squeezed.shape[1] };
 };
 
 function clamp(number: number, size: number) {
